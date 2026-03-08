@@ -1,0 +1,42 @@
+theme = Box
+
+# --- フォント ---
+font-family = JetBrains Mono
+font-family = BIZ UDGothic
+font-size = 14
+font-thicken = true
+font-feature = +liga
+font-feature = +calt
+font-feature = -dlig
+
+# --- ウィンドウ ---
+window-padding-x = 8
+window-padding-y = 4
+window-padding-balance = true
+
+# --- 背景 ---
+background-opacity = 0.95
+background-blur-radius = 20
+
+# --- カーソル ---
+cursor-style = block
+cursor-style-blink = false
+
+# --- マウス ---
+mouse-hide-while-typing = true
+mouse-scroll-multiplier = 2
+
+# --- スクロールバック ---
+scrollback-limit = 10000000
+
+# --- クリップボード ---
+clipboard-read = ask
+clipboard-write = allow
+clipboard-paste-protection = true
+
+# --- キーバインド（分割ペイン移動） ---
+keybind = ctrl+shift+h=goto_split:left
+keybind = ctrl+shift+j=goto_split:bottom
+keybind = ctrl+shift+k=goto_split:top
+keybind = ctrl+shift+l=goto_split:right
+

@@ -1,0 +1,9 @@
+[opener]
+markdown = [
+  { run = 'glow -p %s', desc = "Preview with glow", block = true },
+]
+
+[open]
+prepend_rules = [
+  { url = "*.md", use = "markdown" },
+]

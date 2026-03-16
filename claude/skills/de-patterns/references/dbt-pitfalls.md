@@ -103,3 +103,28 @@ dbt run --select "customer_orders" --defer --state prod-run-artifacts
 | 入力バリデーション | パイプライン入力時に検証 | 検知は早いが防止はできない |
 
 **発見コストの法則**: 発生前 < 処理前 < 実行中 < ステークホルダー発見後 — 早いほど修正コストが低い。
+
+---
+
+## dbt Doc Blocks による定義の DRY 化
+
+Sources:
+- https://medium.com/towards-data-engineering/dry-metadata-on-dbt-documentation-with-doc-blocks-ff62f8f90ae6
+
+### 問題: フィールド定義のコピペ地獄
+
+- `created_at`, `updated_at` など複数テーブルに出現するフィールドの定義を毎回 .yml に書く
+- 定義変更時に全テーブルの .yml を1つずつ更新する必要がある
+- 結果として定義が空欄のまま放置されがち
+
+### Doc Blocks の使い方
+
+- Markdown ファイルに `{% docs field_name %}...{% enddocs %}` で定義を1箇所に記述
+- .yml ファイルから `description: '{{ doc("field_name") }}'` で参照
+- フォルダ構成: 全モデル共通の `general_docs.md` + 部門固有の `finance_docs.md` など
+
+### 実務上の注意点
+
+- Doc Blocks は dbt の `generate docs` でカタログに反映される
+- 定義変更は Markdown 1ファイルの修正で全テーブルに伝播
+- **教訓**: DRY 原則はコードだけでなくメタデータにも適用すべき。Doc Blocks はデータカタログの品質維持コストを劇的に下げる

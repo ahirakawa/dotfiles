@@ -1,11 +1,19 @@
 ---
 name: magi
-description: 複数の専門エージェント（reviewer, architect, operator）をAgent Teamsとして起動し、独立判断→直接議論→最終合議で結論を出すMAGI式合議システム。設計判断、技術選定、ビジネス判断など多角的な評価が必要なときに使う。ユーザーが「magiで」「MAGI判定」「合議で判断」と言ったときに起動する。
+description: 3つの価値基準（Trust, Speed, Cost）を持つエージェントをAgent Teamsとして起動し、独立判断→直接議論→最終合議で結論を出すMAGI式合議システム。データエンジニアリングの設計判断、技術選定など多角的な評価が必要なときに使う。ユーザーが「magiで」「MAGI判定」「合議で判断」と言ったときに起動する。
 ---
 
 # MAGI 合議システム
 
-3つの専門エージェント（reviewer, architect, operator）を Agent Teams として起動し、独立判断→直接議論→最終合議のプロセスで結論を出す。
+3つの価値基準エージェント（Trust, Speed, Cost）を Agent Teams として起動し、独立判断→直接議論→最終合議のプロセスで結論を出す。
+
+**設計思想:** 本家MAGI（エヴァンゲリオン）と同様に、同じ対象を異なる価値基準で評価し、genuineに対立する判断をぶつけ合うことで意思決定の質を高める。職能分業ではなく、価値観の衝突による合議。
+
+| 基 | 価値基準 | 一言 |
+|---|---|---|
+| **Trust** | データの正確性・完全性 | 品質を妥協するな |
+| **Speed** | データの鮮度・開発速度 | 今すぐ価値を届けろ |
+| **Cost** | リソース効率 | リソースを無駄にするな |
 
 **このスキルはメイン会話で展開される。メイン会話がMAGIリード（オーケストレーター）として振る舞う。**
 
@@ -39,13 +47,13 @@ Agent ツールで **1つのメッセージ内に3つの Agent tool call を含�
 
 ```
 Agent(
-  subagent_type="reviewer",
-  name="reviewer",
+  subagent_type="trust",
+  name="trust",
   team_name="magi-session",
   prompt="
-## あなたの役割: MAGI合議の慎重派（reviewer）
-## チーム構成: reviewer(あなた), architect, operator
-## 割り当て立場: 慎重派（リスク・品質の観点から批判的に評価せよ）
+## あなたの役割: MAGI合議の Trust（信頼）基
+## チーム構成: trust(あなた), speed, cost
+## 価値基準: データは正確で完全か？品質を妥協するな。
 
 ## 収集データ:
 [Phase 0の結果を全文貼る]
@@ -54,19 +62,19 @@ Agent(
 [ユーザーの入力]
 
 ## 指示:
-1. 独立して分析し、判定結果を出力せよ（出力がそのままリードに届く）
+1. Trust の価値基準に基づき独立して分析し、判定結果を出力せよ（出力がそのままリードに届く）
 2. その後、リードからリバッタル（反論ラウンド）の指示がSendMessageで届くので待機せよ
 "
 )
 
 Agent(
-  subagent_type="architect",
-  name="architect",
+  subagent_type="speed",
+  name="speed",
   team_name="magi-session",
   prompt="
-## あなたの役割: MAGI合議の推進派（architect）
-## チーム構成: reviewer, architect(あなた), operator
-## 割り当て立場: 推進派（実現する前提で最善の戦略・設計を提案せよ）
+## あなたの役割: MAGI合議の Speed（速度）基
+## チーム構成: trust, speed(あなた), cost
+## 価値基準: データは速く届くか？今すぐ価値を届けろ。
 
 ## 収集データ:
 [Phase 0の結果を全文貼る]
@@ -75,19 +83,19 @@ Agent(
 [ユーザーの入力]
 
 ## 指示:
-1. 独立して分析し、判定結果を出力せよ（出力がそのままリードに届く）
+1. Speed の価値基準に基づき独立して分析し、判定結果を出力せよ（出力がそのままリードに届く）
 2. その後、リードからリバッタル（反論ラウンド）の指示がSendMessageで届くので待機せよ
 "
 )
 
 Agent(
-  subagent_type="operator",
-  name="operator",
+  subagent_type="cost",
+  name="cost",
   team_name="magi-session",
   prompt="
-## あなたの役割: MAGI合議の現実派（operator）
-## チーム構成: reviewer, architect, operator(あなた)
-## 割り当て立場: 現実派（コスト・実行可能性・リスクを定量的に評価せよ）
+## あなたの役割: MAGI合議の Cost（効率）基
+## チーム構成: trust, speed, cost(あなた)
+## 価値基準: リソースは妥当か？リソースを無駄にするな。
 
 ## 収集データ:
 [Phase 0の結果を全文貼る]
@@ -96,16 +104,11 @@ Agent(
 [ユーザーの入力]
 
 ## 指示:
-1. 独立して分析し、判定結果を出力せよ（出力がそのままリードに届く）
+1. Cost の価値基準に基づき独立して分析し、判定結果を出力せよ（出力がそのままリードに届く）
 2. その後、リードからリバッタル（反論ラウンド）の指示がSendMessageで届くので待機せよ
 "
 )
 ```
-
-**立場の割り振りの意図:**
-- reviewer = 慎重派: 問題を見つける役。品質・リスクの観点で批判的に評価
-- architect = 推進派: 実現する方法を考える役。「どうすればできるか」を設計
-- operator = 現実派: 数字で語る役。コスト・工数・損益を定量評価
 
 ### Phase 2: 第1ラウンド集約
 
@@ -114,11 +117,11 @@ Agent(
 ```
 ## MAGI 判定（第1ラウンド）
 
-| 観点 | 立場 | 判定 | 要約 |
-|------|------|------|------|
-| reviewer（品質） | 慎重派 | ✅ or ❌ | 一言理由 |
-| architect（設計） | 推進派 | ✅ or ❌ | 一言理由 |
-| operator（運用） | 現実派 | ✅ or ❌ | 一言理由 |
+| 価値基準 | 判定 | 要約 |
+|----------|------|------|
+| Trust（信頼） | ✅ or ❌ | 一言理由 |
+| Speed（速度） | ✅ or ❌ | 一言理由 |
+| Cost（効率） | ✅ or ❌ | 一言理由 |
 
 リバッタル（直接議論）を開始します...
 ```
@@ -130,75 +133,75 @@ Agent(
 各エージェントに SendMessage で他の2者の主張を送り、**エージェント同士が直接議論する**よう指示する:
 
 ```
-SendMessage(to="reviewer", message="
+SendMessage(to="trust", message="
 ## リバッタル開始
 
-以下は他の2者の判断です。
+以下は他の2基の判断です。
 
-### architect（推進派）の主張:
-[architectの出力]
+### Speed（速度）の主張:
+[speedの出力]
 
-### operator（現実派）の主張:
-[operatorの出力]
+### Cost（効率）の主張:
+[costの出力]
 
 ## 指示:
-1. 推進派(architect)の主張に対して反論があれば、architectに直接SendMessageで伝えよ
-2. 現実派(operator)の主張について補足・反論があれば、operatorに直接SendMessageで伝えよ
-3. 他のエージェントからのSendMessageを受け取り、応答せよ
-4. 議論が収束したら（最大2往復）、最終判定をリードにSendMessageで報告せよ
-", summary="リバッタル指示をreviewerに送信")
+1. Speed の主張に対して反論・補足があれば、speed に直接 SendMessage で伝えよ
+2. Cost の主張に対して反論・補足があれば、cost に直接 SendMessage で伝えよ
+3. 他のエージェントからの SendMessage を受け取り、応答せよ
+4. 議論が収束したら（最大2往復）、最終判定をリードに SendMessage で報告せよ
+", summary="リバッタル指示を trust に送信")
 
-SendMessage(to="architect", message="
+SendMessage(to="speed", message="
 ## リバッタル開始
 
-以下は他の2者の判断です。
+以下は他の2基の判断です。
 
-### reviewer（慎重派）の主張:
-[reviewerの出力]
+### Trust（信頼）の主張:
+[trustの出力]
 
-### operator（現実派）の主張:
-[operatorの出力]
+### Cost（効率）の主張:
+[costの出力]
 
 ## 指示:
-1. 慎重派(reviewer)の懸念に対して、それでも推進すべき理由があればreviewerに直接SendMessageで伝えよ
-2. 現実派(operator)のコスト指摘を踏まえた修正案があれば、operatorに直接SendMessageで伝えよ
-3. 他のエージェントからのSendMessageを受け取り、応答せよ
-4. 議論が収束したら（最大2往復）、最終判定をリードにSendMessageで報告せよ
-", summary="リバッタル指示をarchitectに送信")
+1. Trust の懸念に対して、それでも速度を優先すべき理由があれば trust に直接 SendMessage で伝えよ
+2. Cost の指摘を踏まえたスピード改善案があれば、cost に直接 SendMessage で伝えよ
+3. 他のエージェントからの SendMessage を受け取り、応答せよ
+4. 議論が収束したら（最大2往復）、最終判定をリードに SendMessage で報告せよ
+", summary="リバッタル指示を speed に送信")
 
-SendMessage(to="operator", message="
+SendMessage(to="cost", message="
 ## リバッタル開始
 
-以下は他の2者の判断です。
+以下は他の2基の判断です。
 
-### reviewer（慎重派）の主張:
-[reviewerの出力]
+### Trust（信頼）の主張:
+[trustの出力]
 
-### architect（推進派）の主張:
-[architectの出力]
+### Speed（速度）の主張:
+[speedの出力]
 
 ## 指示:
-1. 推進派と慎重派の主張を踏まえ、現実的な落とし所をreviewer・architectそれぞれに直接SendMessageで提案せよ
-2. 他のエージェントからのSendMessageを受け取り、応答せよ
-3. 議論が収束したら（最大2往復）、最終判定をリードにSendMessageで報告せよ
-", summary="リバッタル指示をoperatorに送信")
+1. Trust と Speed の主張を踏まえ、コスト効率の良い落とし所を trust・speed それぞれに直接 SendMessage で提案せよ
+2. 他のエージェントからの SendMessage を受け取り、応答せよ
+3. 議論が収束したら（最大2往復）、最終判定をリードに SendMessage で報告せよ
+", summary="リバッタル指示を cost に送信")
 ```
 
-**このフェーズでは3者がSendMessageで直接やりとりする。リードは議論を待ち、最終判定の報告を受け取るだけ。**
+**このフェーズでは3基が SendMessage で直接やりとりする。リードは議論を待ち、最終判定の報告を受け取るだけ。**
 
 ### Phase 3: 最終合議
 
-リバッタル後の3者の最終判断を集約し、ユーザーに報告する:
+リバッタル後の3基の最終判断を集約し、ユーザーに報告する:
 
 ```
 ## MAGI 最終判定
 
 ### 第1ラウンド → リバッタル後の変化
-| 観点 | 第1ラウンド | リバッタル後 | 変化の理由 |
-|------|------------|-------------|-----------|
-| reviewer | ✅/❌ | ✅/❌ | ... |
-| architect | ✅/❌ | ✅/❌ | ... |
-| operator | ✅/❌ | ✅/❌ | ... |
+| 価値基準 | 第1ラウンド | リバッタル後 | 変化の理由 |
+|----------|------------|-------------|-----------|
+| Trust | ✅/❌ | ✅/❌ | ... |
+| Speed | ✅/❌ | ✅/❌ | ... |
+| Cost  | ✅/❌ | ✅/❌ | ... |
 
 ### 合議結果: [全会一致 ✅ / 多数決 ⚠️ / 割れている ❌]
 
@@ -206,13 +209,13 @@ SendMessage(to="operator", message="
 - 根拠1: [出典付き]
 - 根拠2: [出典付き]
 
-### エージェント間で合意した点
+### 3基が合意した点
 - ...
 
-### エージェント間で合意しなかった点
-- reviewer の主張: ...
-- architect の主張: ...
-- operator の主張: ...
+### 3基が合意しなかった点
+- Trust の主張: ...
+- Speed の主張: ...
+- Cost の主張: ...
 
 ### 最終推奨
 - 結論を述べる
@@ -225,19 +228,19 @@ SendMessage(to="operator", message="
 合議完了後、チームメイトをシャットダウンしてチームを削除する:
 
 ```
-SendMessage(to="reviewer", message={type: "shutdown_request", reason: "合議完了"})
-SendMessage(to="architect", message={type: "shutdown_request", reason: "合議完了"})
-SendMessage(to="operator", message={type: "shutdown_request", reason: "合議完了"})
+SendMessage(to="trust", message={type: "shutdown_request", reason: "合議完了"})
+SendMessage(to="speed", message={type: "shutdown_request", reason: "合議完了"})
+SendMessage(to="cost", message={type: "shutdown_request", reason: "合議完了"})
 TeamDelete()
 ```
 
 ## ルール
 
 - Phase 0 を省略してはならない（事実なき判断は無価値）
-- Phase 1 では Agent ツールで3者を **必ず並列起動** する（独立性の担保）
+- Phase 1 では Agent ツールで3基を **必ず並列起動** する（独立性の担保）
 - Phase 2.5 のリバッタルは **省略してはならない** （全会一致でも実行）
 - Phase 2.5 ではエージェント同士の直接通信を使い、リードは仲介しない
-- 1者でも ❌ がある場合、その理由を必ずユーザーに伝える
-- 全会一致の ✅ でも、各者の総評は省略しない
+- 1基でも ❌ がある場合、その理由を必ずユーザーに伝える
+- 全会一致の ✅ でも、各基の総評は省略しない
 - 各エージェントの出力をそのまま引用し、自分の解釈で改変しない
 - 数値を含む主張には必ず出典を求める。出典なき数値は「未検証」と注記する

@@ -67,3 +67,64 @@ Sources:
 
 - **教訓**: 探索的分析やアドホッククエリは必ずしもクラウドの大きなインスタンスが必要ではない。DuckDB + ローカルSSD で十分なケースが多い
 - ただし本記事の推奨はクラウド側に DuckDB を配置し、MacBook はクライアントとして使う構成
+
+---
+
+## Claude Code × dbt: データエンジニア置き換え実験の教訓
+
+Sources:
+- https://rmoff.net/2026/03/11/claude-code-isnt-going-to-replace-data-engineers-yet/
+
+### 実験概要
+
+- Claude Code (Opus 4.6) で UK 洪水監視 API の dbt プロジェクトをゼロから構築
+- ステージング → ディメンション/ファクト、インクリメンタルロード、SCD Type 2、バックフィル、テスト・ドキュメントまで自律的に実装
+
+### 検出された致命的欠陥
+
+- API の `?_limit=2000` 制限により 5,458 ステーション中 1,493 行しか取得しない**サイレント失敗**
+- dim_stations で列を暗黙的に削除（gridReference, datumOffset）、dim_measures から unit を除外
+- SCD 監視列の選択基準が不明確
+
+### エージェント型コーディングの特性
+
+- エラー出力解析、Jinja2 エスケープ問題の自動解決、非推奨テスト構文の自動修正は得意
+- プロンプト最適化は「泥沼」— LLM の非決定性により反復調整がカーゴカルト的になる
+- **教訓**: 「DE + AI > DE」は成立するが、完全置き換えは信頼性の問題で不可。特にデータの網羅性（サイレント欠損）の検証は人間の領域
+
+---
+
+## Apache Iceberg エコシステムの現状と実践的課題
+
+Sources:
+- https://www.getdbt.com/blog/the-iceberg-ecosystem-today
+
+### エコシステムの構成要素
+
+- **Query Engine**: SQL 発行・テーブル操作の実行主体（Spark, Trino, Snowflake 等）
+- **Object Store**: S3/GCS/ADLS 等のファイルストレージ層
+- **Catalog**: テーブルの存在・位置・アクセス方法を管理。Internal（Snowflake native 等）と External（REST catalog）の2種
+
+### 4パート Namespace の標準化
+
+- `catalog.database.schema.identifier` の4層構造が Databricks Unity Catalog / Snowflake 双方で採用
+- フェデレーション環境での名前衝突を回避するための設計
+
+### 統合の成熟度 3段階
+
+1. **Naive**: Object Store 上の Parquet/JSON を直接読む
+2. **REST Catalog**: 複数エンジンが最新テーブルバージョンをクエリ
+3. **Schema-scale**: スキーマ検出・同期、マルチテーブルトランザクション
+
+### 実践的課題
+
+- **メタデータ性能**: テーブル一覧の取得速度が UX を左右する。外部システムの遅延がフェデレーション全体のボトルネックになりうる
+- **認証・認可**: Vended credentials（カタログ認証→短命の Object Store 認証情報を発行）は2鍵問題を解決するが、クロスプラットフォームの認可は未解決
+- **Producer vs Consumer モデル**: Producer 主導（カタログに直接書き込み）の方が Consumer 主導（手動ポインタ作成）より設計がクリーン
+
+### 今後の注目領域
+
+- Push 型カタログ更新（ポーリング廃止）
+- Small files 問題の改善
+- 外部カタログへの直接書き込みサポート拡大
+- **教訓**: ベンダー間の協調が「標準がグッドウィル」と言われるほど進んでおり、プロプライエタリ lock-in より Open specification への収束が加速している

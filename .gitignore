@@ -1,1 +1,22 @@
+# --- Claude Code / harness runtime artifacts (never commit) ---
+# Observability DBs and session logs may contain command history, paths, and task text.
+*.duckdb
+*.duckdb.wal
+*.jsonl
+*.sqlite
+*.db
 
+# Per-project / per-session state captured by the safety harness
+state/
+**/state/
+
+# Local settings can hold secrets in `env`
+settings.local.json
+**/.claude/settings.local.json
+
+# Backups created when editing settings
+*.bak
+*.bak.*
+
+# OS / editor noise
+.DS_Store

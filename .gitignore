@@ -20,3 +20,4 @@ settings.local.json
 
 # OS / editor noise
 .DS_Store
+claude/skills/feed-curator

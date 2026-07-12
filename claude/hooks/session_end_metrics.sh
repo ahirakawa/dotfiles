@@ -35,8 +35,21 @@ fi
 
 ended_at="$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date +"%Y-%m-%dT%H:%M:%S%z" 2>/dev/null || printf '')"
 
+# blocked/warned counts come from the audit log (single source of truth for
+# all guards); the state file's counters only cover the circuit breaker.
+AUDIT_LOG_PATH="${HOME}/.claude/harness_audit.jsonl"
+blocked_from_audit=0
+warned_from_audit=0
+if [[ -f "$AUDIT_LOG_PATH" ]]; then
+  blocked_from_audit="$(jq -rR --arg sid "$session_id" 'fromjson? | select((.session_id // "") == $sid) | (.decision // "")' "$AUDIT_LOG_PATH" 2>/dev/null | grep -cE '^(block|blocked)$' || true)"
+  warned_from_audit="$(jq -rR --arg sid "$session_id" 'fromjson? | select((.session_id // "") == $sid) | (.decision // "")' "$AUDIT_LOG_PATH" 2>/dev/null | grep -cE '^(warn|warned)$' || true)"
+fi
+blocked_from_audit="${blocked_from_audit:-0}"
+warned_from_audit="${warned_from_audit:-0}"
+
 metrics_json="$(
-  jq -c --arg ended_at "$ended_at" --arg project "$project_name" '
+  jq -c --arg ended_at "$ended_at" --arg project "$project_name" \
+     --argjson blocked "$blocked_from_audit" --argjson warned "$warned_from_audit" '
     def object_or_empty: if type == "object" then . else {} end;
     def array_len: if type == "array" then length else 0 end;
     def calls_count:
@@ -57,8 +70,8 @@ metrics_json="$(
       total_calls: calls_count,
       unique_tools: ($by_tool | keys | length),
       top_tool: (($by_tool | to_entries | max_by(.value) | .key) // "none"),
-      blocked_count: (.blocked_count // 0),
-      warning_count: ((.warnings // []) | array_len),
+      blocked_count: $blocked,
+      warning_count: $warned,
       files_changed: ($file_edits | keys | length),
       by_tool: $by_tool,
       baseline_status: (.baseline_status // "unknown")

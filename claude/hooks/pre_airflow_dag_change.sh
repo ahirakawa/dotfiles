@@ -44,6 +44,9 @@ block() {
   exit 2
 }
 
+# Non-blocking warnings are collected and delivered via additionalContext at
+# the end (stderr at exit 0 never reaches Claude).
+WARN_BUF=""
 warn() {
   local session_id="${1-}"
   local file_path="${2-}"
@@ -52,17 +55,13 @@ warn() {
   local new_value="${5-}"
 
   audit "$session_id" "$file_path" "$change_type" "$old_value" "$new_value" "warn"
-  echo "[warn] pre_airflow_dag_change: $change_type: $old_value -> $new_value ($file_path)" >&2
-}
-
-first_match_value() {
-  local text="${1-}"
-  local regex="${2-}"
-  printf '%s\n' "$text" | grep -E "$regex" | sed -E "s/.*$regex.*/\\1/" | head -n 1
-}
-
-extract_schedule() {
-  first_match_value "${1-}" "schedule(_interval)?[[:space:]]*=[[:space:]]*['\"]([^'\"]+)['\"]" | sed -n 's/^.*//p'
+  local line="[airflow-dag warning] $change_type: $old_value -> $new_value ($file_path)"
+  if [[ -z "$WARN_BUF" ]]; then
+    WARN_BUF="$line"
+  else
+    WARN_BUF="${WARN_BUF}
+${line}"
+  fi
 }
 
 extract_schedule() {
@@ -267,4 +266,14 @@ if changed "$old_retry_delay" "$new_retry_delay"; then
 fi
 
 audit "$session_id" "$file_path" "none" "" "" "allow"
+
+if [[ -n "$WARN_BUF" ]]; then
+  jq -n --arg ctx "$WARN_BUF" '{
+    hookSpecificOutput: {
+      hookEventName: "PreToolUse",
+      additionalContext: $ctx
+    }
+  }'
+fi
+
 exit 0

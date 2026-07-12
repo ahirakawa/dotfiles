@@ -79,26 +79,42 @@ if [ -f "$cwd/claude-progress.txt" ]; then
 fi
 
 baseline_status="skipped"
-dbt_output=""
+baseline_kind="none"
 
-if command -v dbt >/dev/null 2>&1; then
-  if command -v timeout >/dev/null 2>&1; then
-    dbt_output="$(cd "$cwd" 2>/dev/null && timeout 30 dbt parse --no-version-check 2>&1 | tail -20)"
+timeout_bin=""
+if command -v timeout >/dev/null 2>&1; then
+  timeout_bin="timeout"
+elif command -v gtimeout >/dev/null 2>&1; then
+  timeout_bin="gtimeout"
+fi
+
+# Baseline is project-type aware: only run the check that belongs to this
+# project (a dbt parse in a Rust repo is 30s of noise and a false "red").
+if [ -f "$cwd/dbt_project.yml" ] || [ -f "$cwd/dbt/dbt_project.yml" ]; then
+  baseline_kind="dbt parse"
+  if command -v dbt >/dev/null 2>&1 && [ -n "$timeout_bin" ]; then
+    dbt_output="$(cd "$cwd" 2>/dev/null && "$timeout_bin" 30 dbt parse --no-version-check 2>&1 | tail -20)"
     dbt_exit=$?
-  elif command -v gtimeout >/dev/null 2>&1; then
-    dbt_output="$(cd "$cwd" 2>/dev/null && gtimeout 30 dbt parse --no-version-check 2>&1 | tail -20)"
-    dbt_exit=$?
-  else
-    dbt_output="timeout command not found; skipped dbt parse"
-    dbt_exit=127
+    if [ "$dbt_exit" -eq 0 ]; then
+      baseline_status="ok"
+    elif [ "$dbt_exit" -eq 124 ]; then
+      baseline_status="skipped (timeout)"
+    else
+      baseline_status="red"
+    fi
   fi
-
-  if [ "$dbt_exit" -eq 0 ]; then
-    baseline_status="ok"
-  elif [ "$dbt_exit" -eq 127 ] && printf '%s' "$dbt_output" | grep -q "timeout command not found"; then
-    baseline_status="skipped"
-  else
-    baseline_status="red"
+elif [ -f "$cwd/Cargo.toml" ]; then
+  baseline_kind="cargo check"
+  if command -v cargo >/dev/null 2>&1 && [ -n "$timeout_bin" ]; then
+    cargo_output="$(cd "$cwd" 2>/dev/null && "$timeout_bin" 30 cargo check --quiet 2>&1 | tail -5)"
+    cargo_exit=$?
+    if [ "$cargo_exit" -eq 0 ]; then
+      baseline_status="ok"
+    elif [ "$cargo_exit" -eq 124 ]; then
+      baseline_status="skipped (timeout)"
+    else
+      baseline_status="red"
+    fi
   fi
 fi
 
@@ -119,7 +135,7 @@ context="$(cat <<EOF
 - project: $project_name
 - cwd: $cwd
 - branch: $branch (uncommitted: $uncommitted_count files)
-- baseline (dbt parse): $baseline_status
+- baseline (${baseline_kind}): $baseline_status
 
 ### Last commits
 $commits_block
@@ -129,7 +145,7 @@ $progress
 
 ### Auto-mode safety reminders
 - Edits to CLAUDE.md/.claude/* and skill files are blocked. Ask user before suggesting them.
-- Budget: 300 tool calls per session; loop detection at 8 consecutive same-tool calls.
+- Budget: 300 tool calls per session; loop detection at 8 consecutive identical calls (same tool+args).
 - Secrets matching common patterns (AWS, Anthropic, GitHub, etc.) are blocked on write.
 EOF
 )"

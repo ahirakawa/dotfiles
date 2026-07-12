@@ -61,7 +61,9 @@ trap 'rm -f "$TMP"' EXIT
 printf '%s' "$CONTENT" > "$TMP"
 
 PAT_EMAIL='[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
-PAT_US_PHONE='[0-9]{3}[-. ]?[0-9]{3,4}[-. ]?[0-9]{4}'
+# Separators are mandatory: an optional-separator pattern matches any plain
+# 10-digit number, which false-positives on numeric ID columns in seeds.
+PAT_US_PHONE='[0-9]{3}[-. ][0-9]{3,4}[-. ][0-9]{4}'
 PAT_SSN='[0-9]{3}-[0-9]{2}-[0-9]{4}'
 PAT_JP_PHONE='0[789]0[-. ]?[0-9]{4}[-. ]?[0-9]{4}'
 PAT_CC='[0-9]{13,19}'
@@ -170,15 +172,20 @@ if [ "$CSV_ROWS" -ge 5 ] && [ $((N * 10)) -gt $((CSV_ROWS * 3)) ]; then
   emit_block "high_density (>30% rows contain PII)"
 fi
 
-# Rule 7: warn-only if any PII present
+# Rule 7: warn-only if any PII present (delivered via additionalContext;
+# stderr at exit 0 never reaches Claude)
 if [ "$N" -gt 0 ]; then
   first3=$(first_lines "$PII_LINES_UNIQ")
-  {
-    echo "[warn] pre_seed_pii_scan: PII detected in seeds CSV (below block threshold)"
-    echo "  File: $FILE_PATH"
-    echo "  Pattern: ${TYPES:-unknown} at lines: ${first3:-?}"
-    echo "  Density: ${N}/${CSV_ROWS} rows"
-  } >&2
+  WARN_MSG="[seed-pii warning] PII detected in seeds CSV (below block threshold)
+  File: $FILE_PATH
+  Pattern: ${TYPES:-unknown} at lines: ${first3:-?}
+  Density: ${N}/${CSV_ROWS} rows"
+  jq -n --arg ctx "$WARN_MSG" '{
+    hookSpecificOutput: {
+      hookEventName: "PreToolUse",
+      additionalContext: $ctx
+    }
+  }'
   audit "warn" "$(printf '"csv_rows":%d,"pii_rows":%d,"emails":%d,"patterns":"%s"' \
     "$CSV_ROWS" "$N" "$EMAIL_COUNT" "${TYPES:-}")"
   exit 0

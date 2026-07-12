@@ -39,20 +39,28 @@ emit_block() {
   printf '  Bypass: CLAUDE_HOOK_BYPASS=1 claude\n' >&2
 }
 
+# Non-blocking warnings are collected and delivered via additionalContext at
+# the end (stderr at exit 0 never reaches Claude).
+WARN_BUF=""
 emit_warn() {
   local reason="$1"
   local cli_tool="$2"
   local verb="${3:-}"
   local target="${4:-}"
-  printf '[warn] pre_destructive_warehouse_sql: %s via %s' "$reason" "$cli_tool" >&2
+  local msg="[warehouse-sql warning] ${reason} via ${cli_tool}"
   if [ -n "$verb" ]; then
-    printf ' (verb: %s' "$verb" >&2
+    msg="${msg} (verb: ${verb}"
     if [ -n "$target" ]; then
-      printf ', target: %s' "$target" >&2
+      msg="${msg}, target: ${target}"
     fi
-    printf ')' >&2
+    msg="${msg})"
   fi
-  printf '\n' >&2
+  if [ -z "$WARN_BUF" ]; then
+    WARN_BUF="$msg"
+  else
+    WARN_BUF="${WARN_BUF}
+${msg}"
+  fi
 }
 
 first_nonempty() {
@@ -259,5 +267,14 @@ fi
 
 if [ "$decision" -eq 2 ]; then
   exit 2
+fi
+
+if [ -n "$WARN_BUF" ]; then
+  jq -n --arg ctx "$WARN_BUF" '{
+    hookSpecificOutput: {
+      hookEventName: "PreToolUse",
+      additionalContext: $ctx
+    }
+  }'
 fi
 exit 0

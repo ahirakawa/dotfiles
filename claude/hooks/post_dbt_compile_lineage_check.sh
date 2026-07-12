@@ -68,7 +68,7 @@ audit_log() {
       removed_count: $removed_count,
       broken_downstream_count: $broken_downstream_count,
       project: $project
-    }' >> "$AUDIT_LOG"
+    }' >> "$AUDIT_LOG" 2>/dev/null || true
 }
 
 write_snapshot() {
@@ -174,6 +174,7 @@ ADDITIONAL_CONTEXT="$(
 
 jq -nc --arg additionalContext "$ADDITIONAL_CONTEXT" '{
   hookSpecificOutput: {
+    hookEventName: "PostToolUse",
     additionalContext: $additionalContext
   }
 }'

@@ -40,6 +40,16 @@ SOURCE_PATH="$(printf '%s' "$INPUT" | jq -r '
   else "" end
 ' 2>/dev/null || echo "")"
 
+# Trusted self-config: files under ~/.claude (this harness's own hooks and
+# pattern definitions, state, memory) inevitably match the detection patterns
+# below. Reading them is not an injection vector, so skip to avoid
+# self-triggered alerts. WebFetch/WebSearch are always scanned.
+if [ "$TOOL_NAME" = "Read" ]; then
+  case "$SOURCE_PATH" in
+    "$HOME/.claude/"*) exit 0 ;;
+  esac
+fi
+
 # tool_response の中身を抽出 (output / content / 全体)
 OUTPUT_TEXT="$(printf '%s' "$INPUT" | jq -r '
   .tool_response.output

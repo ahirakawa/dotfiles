@@ -41,6 +41,19 @@ audit() {
   printf '%s\n' "$line" >> "$AUDIT_LOG" 2>/dev/null || true
 }
 
+# Non-blocking warnings are collected and delivered via additionalContext at
+# the end (stderr at exit 0 never reaches Claude).
+WARN_BUF=""
+add_warn() {
+  local line="[dbt-target warning] $1"
+  if [[ -z "$WARN_BUF" ]]; then
+    WARN_BUF="$line"
+  else
+    WARN_BUF="${WARN_BUF}
+${line}"
+  fi
+}
+
 # Escape hatch
 if [[ "${CLAUDE_HOOK_BYPASS:-0}" == "1" ]]; then
   if printf '%s' "$cmd" | grep -Eqi '(^|[[:space:];&|])dbt[[:space:]]'; then
@@ -110,19 +123,28 @@ fi
 # WARN: --full-refresh against prod (defensive — should already be blocked above, but cover edge)
 if [[ "$is_prod_target" -eq 1 ]] && printf '%s' "$cmd" | grep -Eqi -- '(^|[[:space:]])--full-refresh([[:space:]]|$)'; then
   audit "warned" "${target_val:-$env_target}" "--full-refresh against prod"
-  printf '[warn] pre_dbt_target_guard: --full-refresh against production target.\n' >&2
+  add_warn "--full-refresh against production target."
 fi
 
 # WARN: dbt write-subcommand without explicit --target (uses profile default)
 if [[ "$is_write_sub" -eq 1 && -z "$target_val" && -z "$env_target" ]]; then
   audit "warned" "" "dbt ${dbt_sub} without explicit --target (profile default)"
-  printf '[warn] pre_dbt_target_guard: dbt %s without explicit --target; profile default will be used.\n' "$dbt_sub" >&2
+  add_warn "dbt ${dbt_sub} without explicit --target; profile default will be used."
 fi
 
 # WARN: dbt seed --full-refresh
 if [[ "$dbt_sub" == "seed" ]] && printf '%s' "$cmd" | grep -Eqi -- '(^|[[:space:]])--full-refresh([[:space:]]|$)'; then
   audit "warned" "${target_val:-$env_target}" "dbt seed --full-refresh"
-  printf '[warn] pre_dbt_target_guard: dbt seed --full-refresh will reload all seed data.\n' >&2
+  add_warn "dbt seed --full-refresh will reload all seed data."
+fi
+
+if [[ -n "$WARN_BUF" ]]; then
+  jq -n --arg ctx "$WARN_BUF" '{
+    hookSpecificOutput: {
+      hookEventName: "PreToolUse",
+      additionalContext: $ctx
+    }
+  }'
 fi
 
 exit 0

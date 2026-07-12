@@ -1,4 +1,12 @@
 #!/usr/bin/env bash
+# PreToolUse guard for Bash commands.
+# Blocks: exit 2 + stderr (fed back to Claude).
+# Warns: collected and delivered via hookSpecificOutput.additionalContext at
+# exit 0 (stderr at exit 0 never reaches Claude).
+# The destructive-command rules (sudo, rm -rf, mkfs, raw disks, fork bombs,
+# curl|sh) intentionally do NOT honor CLAUDE_HOOK_BYPASS — they are the hard
+# safety floor. Only the protected-config-path rule is bypassable, so that
+# maintenance sessions can manage ~/.claude deliberately.
 set -euo pipefail
 
 input="$(cat)"
@@ -13,13 +21,40 @@ if [[ -z "$cmd" ]]; then
   exit 0
 fi
 
+session_id="$(printf '%s' "$input" | jq -r '.session_id // "unknown"')"
+AUDIT_LOG="${HOME}/.claude/harness_audit.jsonl"
+
+audit() {
+  local decision="$1" reason="$2"
+  local ts
+  ts="$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date +%s)"
+  jq -nc \
+    --arg ts "$ts" \
+    --arg detector "bash_guard" \
+    --arg session_id "$session_id" \
+    --arg decision "$decision" \
+    --arg reason "$reason" \
+    --arg command_summary "${cmd:0:120}" \
+    '{ts:$ts, detector:$detector, session_id:$session_id, decision:$decision, reason:$reason, command_summary:$command_summary}' \
+    >> "$AUDIT_LOG" 2>/dev/null || true
+}
+
 block() {
+  audit "blocked" "$1"
   printf '[block] %s\nCommand: %s\n' "$1" "$cmd" >&2
   exit 2
 }
 
+WARN_BUF=""
 warn() {
-  printf '[warn] %s\nCommand: %s\n' "$1" "$cmd" >&2
+  audit "warned" "$1"
+  local line="[bash-guard warning] $1"
+  if [[ -z "$WARN_BUF" ]]; then
+    WARN_BUF="$line"
+  else
+    WARN_BUF="${WARN_BUF}
+${line}"
+  fi
 }
 
 lc="$(printf '%s' "$cmd" | tr '[:upper:]' '[:lower:]')"
@@ -69,6 +104,21 @@ if [[ "$lc" =~ (curl|wget)[[:space:]].*\|[[:space:]]*(sudo[[:space:]]+)?(bash|sh
   block "Piping remote downloads into a shell is not allowed."
 fi
 
+# Bash-mediated writes to protected agent-config paths. The Edit/Write tools
+# are guarded by pre_edit_config_guard.sh; without this rule a shell
+# redirection or cp/mv/tee would silently bypass that guard.
+# Bypassable via CLAUDE_HOOK_BYPASS=1 (maintenance tier).
+if [[ "${CLAUDE_HOOK_BYPASS:-0}" != "1" ]]; then
+  redir_cfg_pat='>>?[[:space:]]*[^[:space:]]*(\.claude/(hooks|agents|commands|skills)/|\.claude/settings[^[:space:]]*\.json|\.git/hooks/)|>>?[[:space:]]*([^[:space:]]*/)?claude\.md([[:space:]]|$)'
+  cpmv_cfg_pat='(^|[;&|`(][[:space:]]*|[[:space:]])(cp|mv|install|ln|tee)[[:space:]][^;&|]*(\.claude/(hooks|agents|commands|skills)(/|[[:space:]]|$)|\.claude/settings[^[:space:]]*\.json|(^|[/[:space:]])claude\.md([[:space:]]|$)|\.git/hooks/)'
+  if printf '%s' "$lc" | grep -Eq "$redir_cfg_pat"; then
+    block "Shell redirection into a protected config path (.claude/*, CLAUDE.md, .git/hooks). Use the Edit/Write tools so config guards apply, or CLAUDE_HOOK_BYPASS=1 for maintenance."
+  fi
+  if printf '%s' "$lc" | grep -Eq "$cpmv_cfg_pat"; then
+    block "cp/mv/ln/tee/install touching a protected config path (.claude/*, CLAUDE.md, .git/hooks). Use the Edit/Write tools so config guards apply, or CLAUDE_HOOK_BYPASS=1 for maintenance."
+  fi
+fi
+
 # git push --force / -f to protected branches
 if [[ "$lc" =~ git[[:space:]]+push ]]; then
   has_force=0
@@ -106,7 +156,7 @@ if [[ "$lc" =~ (drop[[:space:]]+database|drop[[:space:]]+schema|truncate[[:space
   fi
 fi
 
-# Warnings (non-blocking)
+# Warnings (non-blocking, delivered as additionalContext below)
 if [[ "$lc" =~ git[[:space:]]+reset[[:space:]]+(--hard|.*[[:space:]]--hard) ]]; then
   warn "git reset --hard will discard local changes."
 fi
@@ -125,6 +175,15 @@ fi
 
 if [[ "$lc" =~ kubectl[[:space:]]+delete ]]; then
   warn "kubectl delete removes cluster resources."
+fi
+
+if [[ -n "$WARN_BUF" ]]; then
+  jq -n --arg ctx "$WARN_BUF" '{
+    hookSpecificOutput: {
+      hookEventName: "PreToolUse",
+      additionalContext: $ctx
+    }
+  }'
 fi
 
 exit 0

@@ -12,6 +12,30 @@ esac
 
 FILE_PATH=$(printf '%s' "$INPUT" | jq -r '.tool_input.file_path // "unknown"')
 
+SESSION_ID=$(printf '%s' "$INPUT" | jq -r '.session_id // "unknown"')
+AUDIT_LOG="${HOME}/.claude/harness_audit.jsonl"
+
+audit() {
+  local decision="$1" reason="$2"
+  local ts
+  ts="$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date +%s)"
+  jq -nc \
+    --arg ts "$ts" \
+    --arg detector "secret_scan" \
+    --arg session_id "$SESSION_ID" \
+    --arg file_path "$FILE_PATH" \
+    --arg decision "$decision" \
+    --arg reason "$reason" \
+    '{ts:$ts, detector:$detector, session_id:$session_id, file_path:$file_path, decision:$decision, reason:$reason}' \
+    >> "$AUDIT_LOG" 2>/dev/null || true
+}
+
+# Escape hatch for maintenance sessions.
+if [ "${CLAUDE_HOOK_BYPASS:-0}" = "1" ]; then
+  audit "bypass" "CLAUDE_HOOK_BYPASS=1"
+  exit 0
+fi
+
 case "$TOOL_NAME" in
   Write)
     CONTENT=$(printf '%s' "$INPUT" | jq -r '.tool_input.content // ""')
@@ -32,6 +56,7 @@ check_pattern() {
   local name="$1"
   local pattern="$2"
   if printf '%s' "$CONTENT" | grep -E -q "$pattern"; then
+    audit "blocked" "$name"
     printf '[blocked] Potential secret detected in %s (pattern: %s). Use env vars / secret manager / 1Password.\n' "$FILE_PATH" "$name" >&2
     exit 2
   fi
@@ -51,7 +76,13 @@ check_pattern "Snowflake password literal"        "password[[:space:]]*=[[:space
 
 while IFS= read -r token; do
   if [[ "$token" =~ [A-Z] ]] && [[ "$token" =~ [a-z] ]] && [[ "$token" =~ [0-9] ]]; then
-    printf '[warn] High-entropy string (>=32 chars, mixed case+digits) detected in %s. Verify it is not a secret.\n' "$FILE_PATH" >&2
+    audit "warned" "high-entropy string (>=32 chars, mixed case+digits)"
+    jq -n --arg ctx "[secret-scan warning] High-entropy string (>=32 chars, mixed case+digits) detected in ${FILE_PATH}. Verify it is not a secret." '{
+      hookSpecificOutput: {
+        hookEventName: "PreToolUse",
+        additionalContext: $ctx
+      }
+    }'
     break
   fi
 done < <(printf '%s' "$CONTENT" | grep -oE '[A-Za-z0-9_/+=-]{32,}' || true)

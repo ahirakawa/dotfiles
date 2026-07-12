@@ -1,14 +1,33 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+INPUT="$(cat)"
+
+SESSION_ID="$(printf '%s' "$INPUT" | jq -r '.session_id // "unknown"' 2>/dev/null || echo "unknown")"
+AUDIT_LOG="${HOME}/.claude/harness_audit.jsonl"
+
+audit() {
+  local decision="$1" reason="$2"
+  local ts
+  ts="$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date +%s)"
+  jq -nc \
+    --arg ts "$ts" \
+    --arg detector "edit_config_guard" \
+    --arg session_id "$SESSION_ID" \
+    --arg file_path "${FILE_PATH:-}" \
+    --arg decision "$decision" \
+    --arg reason "$reason" \
+    '{ts:$ts, detector:$detector, session_id:$session_id, file_path:$file_path, decision:$decision, reason:$reason}' \
+    >> "$AUDIT_LOG" 2>/dev/null || true
+}
+
 # Escape hatch for maintenance: set CLAUDE_HOOK_BYPASS=1 to skip this guard.
-# Use sparingly — every bypass is logged to stderr.
+# Use sparingly — every bypass is audited.
 if [ "${CLAUDE_HOOK_BYPASS:-0}" = "1" ]; then
   echo "[pre_edit_config_guard] BYPASSED via CLAUDE_HOOK_BYPASS=1" >&2
+  audit "bypass" "CLAUDE_HOOK_BYPASS=1"
   exit 0
 fi
-
-INPUT="$(cat)"
 
 TOOL_NAME="$(printf '%s' "$INPUT" | jq -r '.tool_name // empty')"
 
@@ -30,13 +49,21 @@ esac
 
 block() {
   local reason="$1"
+  audit "blocked" "$reason"
   printf '[blocked] %s Ask user explicitly before editing: %s\n' "$reason" "$FILE_PATH" >&2
   exit 2
 }
 
+# Non-blocking warning via additionalContext (stderr at exit 0 never reaches Claude).
 warn() {
   local reason="$1"
-  printf '[warn] %s File: %s\n' "$reason" "$FILE_PATH" >&2
+  audit "warned" "$reason"
+  jq -n --arg ctx "[config-guard warning] ${reason} File: ${FILE_PATH}" '{
+    hookSpecificOutput: {
+      hookEventName: "PreToolUse",
+      additionalContext: $ctx
+    }
+  }'
   exit 0
 }
 

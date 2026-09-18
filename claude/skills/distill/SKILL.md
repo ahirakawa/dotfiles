@@ -1,6 +1,6 @@
 ---
 name: distill
-description: Claude Codeセッションのトランスクリプトから「学びの濃いセッション」を抽出し、判断の教訓をpitfalls/メモリ/Skillルールに蒸留する定期ワークフロー。ユーザーが「蒸留して」「distillを回して」と言ったとき、または週次の振り返りで起動する。Fable期間中はFableセッションの判断分岐を資産化する主経路。
+description: Claude Codeセッションのトランスクリプトから「学びの濃いセッション」を抽出し、判断の教訓をpitfalls/メモリ/Skillルールに蒸留する定期ワークフロー。ユーザーが「蒸留して」「distillを回して」と言ったとき、または週次の振り返りで起動する。
 ---
 
 # distill — セッション蒸留ワークフロー
@@ -41,7 +41,7 @@ python3 ~/.claude/skills/distill/ingest.py rank --limit 10
    - **失敗と回復**: エラーの原因は何で、何を試して、何が効いたか
    - **最初に知っていれば遠回りしなかったこと**
 2. 抽出した教訓を着地させる:
-   - 繰り返す罠 → `~/.claude/skills/fable-protocol/references/pitfalls.md` に追記(状況/兆候/誤り/対処の形式)
+   - 繰り返す罠 → `~/.claude/skills/distill/references/pitfalls.md` に追記(状況/兆候/誤り/対処の形式)
    - プロジェクト固有の知見 → 該当プロジェクトのメモリに保存
    - 手順化できる型 → /retrospective-codify でSkill/ルール化
 3. 処理済みマークを付ける:
